@@ -1,4 +1,4 @@
-module pulsar-generic-functions-go
+module github.com/jiangpengcheng/pulsar-generic-function-go
 
 go 1.21.5
 
