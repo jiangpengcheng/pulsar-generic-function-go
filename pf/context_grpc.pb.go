@@ -55,7 +55,7 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type ContextServiceClient interface {
-	Publish(ctx context.Context, in *PulsarMessage, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	Publish(ctx context.Context, in *PulsarMessage, opts ...grpc.CallOption) (*SendMessageId, error)
 	CurrentRecord(ctx context.Context, in *MessageId, opts ...grpc.CallOption) (*Record, error)
 	RecordMetrics(ctx context.Context, in *MetricData, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	Seek(ctx context.Context, in *Partition, opts ...grpc.CallOption) (*emptypb.Empty, error)
@@ -76,8 +76,8 @@ func NewContextServiceClient(cc grpc.ClientConnInterface) ContextServiceClient {
 	return &contextServiceClient{cc}
 }
 
-func (c *contextServiceClient) Publish(ctx context.Context, in *PulsarMessage, opts ...grpc.CallOption) (*emptypb.Empty, error) {
-	out := new(emptypb.Empty)
+func (c *contextServiceClient) Publish(ctx context.Context, in *PulsarMessage, opts ...grpc.CallOption) (*SendMessageId, error) {
+	out := new(SendMessageId)
 	err := c.cc.Invoke(ctx, ContextService_Publish_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
@@ -179,7 +179,7 @@ func (c *contextServiceClient) IncrCounter(ctx context.Context, in *IncrStateKey
 // All implementations should embed UnimplementedContextServiceServer
 // for forward compatibility
 type ContextServiceServer interface {
-	Publish(context.Context, *PulsarMessage) (*emptypb.Empty, error)
+	Publish(context.Context, *PulsarMessage) (*SendMessageId, error)
 	CurrentRecord(context.Context, *MessageId) (*Record, error)
 	RecordMetrics(context.Context, *MetricData) (*emptypb.Empty, error)
 	Seek(context.Context, *Partition) (*emptypb.Empty, error)
@@ -196,7 +196,7 @@ type ContextServiceServer interface {
 type UnimplementedContextServiceServer struct {
 }
 
-func (UnimplementedContextServiceServer) Publish(context.Context, *PulsarMessage) (*emptypb.Empty, error) {
+func (UnimplementedContextServiceServer) Publish(context.Context, *PulsarMessage) (*SendMessageId, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Publish not implemented")
 }
 func (UnimplementedContextServiceServer) CurrentRecord(context.Context, *MessageId) (*Record, error) {

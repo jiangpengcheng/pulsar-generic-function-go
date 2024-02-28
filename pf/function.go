@@ -42,48 +42,29 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/go-logr/logr"
-	"github.com/go-logr/logr/funcr"
+	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
 
 var (
-	tenant          string
-	namespace       string
-	name            string
-	source          string
-	sink            string
-	instanceId      string
-	functionId      string
-	functionVersion string
-	userConfig      string
-	secretsMap      string
-	logTopic        string
+	stdout                      *os.File
+	tenant                      string
+	namespace                   string
+	name                        string
+	source                      string
+	sink                        string
+	instanceId                  string
+	functionId                  string
+	functionVersion             string
+	clusterName                 string
+	userConfig                  string
+	secretsMap                  string
+	logTopic                    string
+	port                        int
+	metricsPort                 int
+	expectedHealthCheckInterval int
 )
-
-func newStderrLogger() logr.Logger {
-	return funcr.New(func(prefix, args string) {
-		if prefix != "" {
-			_, _ = fmt.Fprintf(os.Stderr, "%s:%s\n", prefix, args)
-		} else {
-			_, _ = fmt.Fprintln(os.Stderr, args)
-		}
-	}, funcr.Options{})
-}
-
-func newPulsarLogger(ctx context.Context, stub ContextServiceClient, logTopic string) logr.Logger {
-	return funcr.New(func(prefix, args string) {
-		message := args
-		if prefix != "" {
-			message = fmt.Sprintf("%s:%s\n", prefix, args)
-		}
-		_, _ = stub.Publish(ctx, &PulsarMessage{
-			Topic:   logTopic,
-			Payload: []byte(message),
-		})
-	}, funcr.Options{})
-}
 
 type function interface {
 	process(ctx context.Context, input []byte) ([]byte, error)
@@ -214,8 +195,8 @@ func newFunction(inputFunc interface{}) function {
 // Where "input" and "output" are types compatible with the "encoding/json" standard library.
 // See https://golang.org/pkg/encoding/json/#Unmarshal for how deserialization behaves
 func Start(funcName interface{}) {
+
 	function := newFunction(funcName)
-	defaultLogger := newStderrLogger()
 
 	var secretsProviderImpl SecretsProvider = &EnvironmentBasedSecretsProvider{}
 	ex, err := os.Executable()
@@ -232,11 +213,11 @@ func Start(funcName interface{}) {
 	}(channel)
 	stub := NewContextServiceClient(channel)
 
-	userConfigMap := make(map[string]string)
+	userConfigMap := make(map[string]interface{})
 	if userConfig != "" {
 		err = json.Unmarshal([]byte(userConfig), &userConfigMap)
 		if err != nil {
-			defaultLogger.Error(err, "Error unmarshal user configs:", err)
+			logrus.Errorf("Error unmarshal user configs: %v", err)
 		}
 	}
 
@@ -244,71 +225,67 @@ func Start(funcName interface{}) {
 	if secretsMap != "" {
 		err = json.Unmarshal([]byte(secretsMap), &secretsMapMap)
 		if err != nil {
-			defaultLogger.Error(err, "Error unmarshal secrets map:", err)
+			logrus.Errorf("Error unmarshal secrets map: %v", err)
 		}
 	}
 
-	var logger logr.Logger
+	ctx := context.Background()
 	if logTopic != "" {
-		logger = newPulsarLogger(context.Background(), stub, logTopic)
-	} else {
-		logger = defaultLogger
+		logrus.AddHook(&PulsarHook{ctx, stub, logTopic})
 	}
 
-	functionContext := NewFunctionContext(context.Background(), tenant, namespace, name, functionId, functionVersion, instanceId, []string{source}, sink, userConfigMap, secretsMapMap, secretsProviderImpl, stub, logger)
+	functionContext := NewFunctionContext(ctx, tenant, namespace, name, functionId, functionVersion, clusterName,
+		instanceId, []string{source}, sink, userConfigMap, secretsMapMap, secretsProviderImpl, stub,
+		port, metricsPort, expectedHealthCheckInterval)
 
 	reader := bufio.NewReader(os.Stdin)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctxWithCancel, cancel := context.WithCancel(context.Background())
 	defer cancel()
-
-	// hijack the stdout so that users cannot write to it
-	stdout := os.Stdout
-	os.Stdout = os.Stderr
 
 	for {
 		line, err := reader.ReadBytes('\n')
 		if err != nil {
 			if err != io.EOF {
-				defaultLogger.Error(err, "Error reading from stdout:", err)
+				logrus.Errorf("Error reading from stdout: %v", err)
 			}
 			break
 		}
 		metaLength := line[0]
 
 		if len(line) < int(metaLength+3) {
-			writeResult(stdout, []byte("error: meta length is too long"))
+			writeResult([]byte("error: meta length is too long"))
 			continue
 		}
 
 		meta := strings.Split(string(line[1:metaLength+1]), "@")
 		if len(meta) != 2 {
-			writeResult(stdout, []byte("error: meta length is not 2"))
+			writeResult([]byte("error: meta length is not 2"))
 			continue
 		}
-		functionContext.SetMessageId(&MessageId{
+		functionContext.setMessageId(&MessageId{
 			Id: meta[0],
 		})
 
 		// ignore the last `\n` byte
 		msg := line[metaLength+1 : len(line)-1]
 		if len(msg) == 0 {
-			writeResult(stdout, []byte("error: msg length is 0"))
+			writeResult([]byte("error: msg length is 0"))
 			continue
 		}
 
-		valuedCtx := NewContext(ctx, functionContext)
+		valuedCtx := NewContext(ctxWithCancel, functionContext)
 		result, err := function.process(valuedCtx, msg)
 		if err != nil {
-			writeResult(stdout, []byte("error: handle message: "+err.Error()))
+			writeResult([]byte("error: handle message: " + err.Error()))
 			continue
 		}
 
-		writeResult(stdout, result)
+		writeResult(result)
 	}
 }
 
-func writeResult(stdout *os.File, result []byte) {
+func writeResult(result []byte) {
 	if len(result) > 0 {
 		result = bytes.ReplaceAll(result, []byte("\n"), []byte(""))
 		_, _ = stdout.Write(result)
@@ -317,6 +294,10 @@ func writeResult(stdout *os.File, result []byte) {
 }
 
 func init() {
+	// reset the stdout to stderr so that users cannot write to it
+	stdout = os.Stdout
+	os.Stdout = os.Stderr
+
 	flag.StringVar(&tenant, "tenant", "", "tenant of function")
 	flag.StringVar(&namespace, "namespace", "", "namespace of function")
 	flag.StringVar(&name, "name", "", "name of function")
@@ -325,7 +306,11 @@ func init() {
 	flag.StringVar(&instanceId, "instance_id", "", "the instance id")
 	flag.StringVar(&functionId, "function_id", "", "the function id")
 	flag.StringVar(&functionVersion, "function_version", "", "the function version")
+	flag.StringVar(&clusterName, "cluster_name", "", "the cluster name")
 	flag.StringVar(&userConfig, "user_config", "", "the user config(in json format)")
 	flag.StringVar(&secretsMap, "secrets_map", "", "the secrets map(in json format)")
 	flag.StringVar(&logTopic, "log_topic", "", "the log topic")
+	flag.IntVar(&port, "port", 0, "the port function is using")
+	flag.IntVar(&metricsPort, "metrics_port", 0, "the metrics port function is using")
+	flag.IntVar(&expectedHealthCheckInterval, "expected_healthcheck_interval", -1, "the interval of health check")
 }

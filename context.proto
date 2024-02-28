@@ -24,7 +24,7 @@ option go_package = ".;pf";
 import "google/protobuf/empty.proto";
 
 service ContextService {
-  rpc publish(PulsarMessage) returns (google.protobuf.Empty) {}
+  rpc publish(PulsarMessage) returns (SendMessageId) {}
   rpc currentRecord(MessageId) returns (Record) {}
   rpc recordMetrics(MetricData) returns (google.protobuf.Empty) {}
   rpc seek(Partition) returns (google.protobuf.Empty) {}
@@ -35,6 +35,13 @@ service ContextService {
   rpc deleteState(StateKey) returns (google.protobuf.Empty) {}
   rpc getCounter(StateKey) returns (Counter) {}
   rpc incrCounter(IncrStateKey) returns (google.protobuf.Empty) {}
+}
+
+message SendMessageId {
+  int64 ledgerId = 1;
+  int64 entryId = 2;
+  int32 batchIndex = 3;
+  int32 partitionIndex = 4;
 }
 
 message StateKey {
