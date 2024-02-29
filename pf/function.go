@@ -195,6 +195,7 @@ func newFunction(inputFunc interface{}) function {
 // Where "input" and "output" are types compatible with the "encoding/json" standard library.
 // See https://golang.org/pkg/encoding/json/#Unmarshal for how deserialization behaves
 func Start(funcName interface{}) {
+	flag.Parse()
 
 	function := newFunction(funcName)
 
