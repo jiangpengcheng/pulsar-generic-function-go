@@ -47,6 +47,11 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
+const (
+	ErrorMark = "XXX_PULSAR_ERROR_XXX:"
+	EmptyMark = "XXX_PULSAR_EMPTY_XXX"
+)
+
 var (
 	stdout                      *os.File
 	tenant                      string
@@ -255,13 +260,13 @@ func Start(funcName interface{}) {
 		metaLength := line[0]
 
 		if len(line) < int(metaLength+3) {
-			writeResult([]byte("error: meta length is too long"))
+			writeResult([]byte(ErrorMark + "meta length is too long"))
 			continue
 		}
 
 		meta := strings.Split(string(line[1:metaLength+1]), "@")
 		if len(meta) != 2 {
-			writeResult([]byte("error: meta length is not 2"))
+			writeResult([]byte(ErrorMark + "meta length is not 2"))
 			continue
 		}
 		functionContext.setMessageId(&MessageId{
@@ -271,14 +276,14 @@ func Start(funcName interface{}) {
 		// ignore the last `\n` byte
 		msg := line[metaLength+1 : len(line)-1]
 		if len(msg) == 0 {
-			writeResult([]byte("error: msg length is 0"))
+			writeResult([]byte(ErrorMark + "msg length is 0"))
 			continue
 		}
 
 		valuedCtx := NewContext(ctxWithCancel, functionContext)
 		result, err := function.process(valuedCtx, msg)
 		if err != nil {
-			writeResult([]byte("error: handle message: " + err.Error()))
+			writeResult([]byte(ErrorMark + "handle message: " + err.Error()))
 			continue
 		}
 
@@ -290,6 +295,8 @@ func writeResult(result []byte) {
 	if len(result) > 0 {
 		result = bytes.ReplaceAll(result, []byte("\n"), []byte(""))
 		_, _ = stdout.Write(result)
+	} else {
+		_, _ = stdout.Write([]byte(EmptyMark))
 	}
 	_, _ = stdout.Write([]byte("\n"))
 }

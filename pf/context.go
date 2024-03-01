@@ -200,7 +200,7 @@ func (c *FunctionContext) Publish(topic string, payload []byte) (*SendMessageId,
 
 // GetCurrentRecord gets the current message from the function context
 func (c *FunctionContext) GetCurrentRecord() (*Record, error) {
-	if c.messageId != nil {
+	if c.message != nil {
 		return c.message, nil
 	}
 	res, err := c.stub.CurrentRecord(c.ctx, c.messageId)
@@ -218,7 +218,7 @@ func (c *FunctionContext) GetMessageId() *MessageId {
 
 // GetMessageKey gets the current message key
 func (c *FunctionContext) GetMessageKey() (string, error) {
-	if c.messageId == nil {
+	if c.message == nil {
 		_, err := c.GetCurrentRecord()
 		if err != nil {
 			return "", err
@@ -229,7 +229,7 @@ func (c *FunctionContext) GetMessageKey() (string, error) {
 
 // GetMessageEventTime gets the current message's event time
 func (c *FunctionContext) GetMessageEventTime() (int32, error) {
-	if c.messageId == nil {
+	if c.message == nil {
 		_, err := c.GetCurrentRecord()
 		if err != nil {
 			return 0, err
@@ -240,7 +240,7 @@ func (c *FunctionContext) GetMessageEventTime() (int32, error) {
 
 // GetMessageProperties gets the current message's properties
 func (c *FunctionContext) GetMessageProperties() (map[string]string, error) {
-	if c.messageId == nil {
+	if c.message == nil {
 		_, err := c.GetCurrentRecord()
 		if err != nil {
 			return nil, err
@@ -257,7 +257,7 @@ func (c *FunctionContext) GetMessageProperties() (map[string]string, error) {
 
 // GetMessageTopic gets the current message topic
 func (c *FunctionContext) GetMessageTopic() (string, error) {
-	if c.messageId == nil {
+	if c.message == nil {
 		_, err := c.GetCurrentRecord()
 		if err != nil {
 			return "", err
@@ -268,7 +268,7 @@ func (c *FunctionContext) GetMessageTopic() (string, error) {
 
 // GetMessagePartitionKey gets the current message's partition key
 func (c *FunctionContext) GetMessagePartitionKey() (string, error) {
-	if c.messageId == nil {
+	if c.message == nil {
 		_, err := c.GetCurrentRecord()
 		if err != nil {
 			return "", err
